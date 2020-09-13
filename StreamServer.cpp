@@ -193,7 +193,7 @@ namespace Apostol {
             CStringList SQL;
 
             SQL.Add(CString().MaxFormatSize(256 + Protocol.Size() + Base64.Size()).
-                Format("SELECT * FROM stream.parse('%s', '%s:%p', '%s');",
+                Format("SELECT * FROM stream.parse('%s', '%s:%d', '%s');",
                      Protocol.c_str(),
                      Socket->PeerIP(), Socket->PeerPort(),
                      Base64.c_str()
