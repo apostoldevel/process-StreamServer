@@ -33,12 +33,12 @@ namespace Apostol {
 
         //--------------------------------------------------------------------------------------------------------------
 
-        //-- CStreamServer ----------------------------------------------------------------------------------------
+        //-- CStreamServer ---------------------------------------------------------------------------------------------
 
         //--------------------------------------------------------------------------------------------------------------
 
         CStreamServer::CStreamServer(CCustomProcess *AParent, CApplication *AApplication):
-                inherited(AParent, AApplication, "stream server") {
+                inherited(AParent, AApplication, "stream process") {
 
         }
         //--------------------------------------------------------------------------------------------------------------
@@ -52,8 +52,8 @@ namespace Apostol {
             
             m_Server.ServerName() = Title;
 
-            m_Server.DefaultIP() = "0.0.0.0";
-            m_Server.DefaultPort(7000);
+            m_Server.DefaultIP() = Config()->Listen();
+            m_Server.DefaultPort(Config()->IniFile().ReadInteger("stream", "port", Config()->Port()));
 
 #if defined(_GLIBCXX_RELEASE) && (_GLIBCXX_RELEASE >= 9)
             m_Server.OnVerbose([this](auto && Sender, auto && AConnection, auto && AFormat, auto && args) { DoVerbose(Sender, AConnection, AFormat, args); });
@@ -80,7 +80,7 @@ namespace Apostol {
         void CStreamServer::BeforeRun() {
             sigset_t set;
 
-            Application()->Header(Application()->Name() + ": stream server process");
+            Application()->Header(Application()->Name() + ": stream process");
 
             Log()->Debug(0, MSG_PROCESS_START, GetProcessName(), Application()->Header().c_str());
 
@@ -115,7 +115,7 @@ namespace Apostol {
 
                 while (!sig_exiting) {
 
-                    log_debug0(APP_LOG_DEBUG_EVENT, Log(), 0, "stream server cycle");
+                    log_debug0(APP_LOG_DEBUG_EVENT, Log(), 0, "stream server process cycle");
 
                     try {
                         m_Server.Wait();
@@ -193,8 +193,9 @@ namespace Apostol {
             CStringList SQL;
 
             SQL.Add(CString().MaxFormatSize(256 + Protocol.Size() + Base64.Size()).
-                Format("SELECT * FROM stream.parse('%s', '%s');",
+                Format("SELECT * FROM stream.parse('%s', '%s:%p', '%s');",
                      Protocol.c_str(),
+                     Socket->PeerIP(), Socket->PeerPort(),
                      Base64.c_str()
             ));
 
