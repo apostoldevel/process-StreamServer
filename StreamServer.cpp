@@ -90,7 +90,7 @@ namespace Apostol {
 
             LoadConfig();
 
-            //SetUser(m_Config.User, m_Config.Group);
+            SetUser(Config()->User(), Config()->Group());
 
             InitializeStreamServer(Application()->Title());
             InitializePQServer(Application()->Title());
@@ -172,9 +172,6 @@ namespace Apostol {
 
                         if (Result->ExecStatus() != PGRES_TUPLES_OK)
                             throw Delphi::Exception::EDBError(Result->GetErrorMessage());
-
-                        if (!Result->GetIsNull(0, 1) && SameText(Result->GetValue(0, 1), "f"))
-                            throw Delphi::Exception::EDBError(Result->GetValue(0, 2));
 
                         if (!Result->GetIsNull(0, 0)) {
                             LResult = base64_decode(Result->GetValue(0, 0));
