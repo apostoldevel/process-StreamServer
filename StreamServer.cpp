@@ -184,8 +184,8 @@ namespace Apostol {
                 }
             };
 
-            auto OnException = [](CPQPollQuery *APollQuery, Delphi::Exception::Exception *AException) {
-                Log()->Error(APP_LOG_EMERG, 0, AException->what());
+            auto OnException = [](CPQPollQuery *APollQuery, const Delphi::Exception::Exception &E) {
+                Log()->Error(APP_LOG_EMERG, 0, E.what());
             };
 
             const auto &Base64 = base64_encode(Data);
@@ -207,6 +207,25 @@ namespace Apostol {
         }
         //--------------------------------------------------------------------------------------------------------------
 
+        void CStreamServer::DoTimer(CPollEventHandler *AHandler) {
+            uint64_t exp;
+
+            auto LTimer = dynamic_cast<CEPollTimer *> (AHandler->Binding());
+            LTimer->Read(&exp, sizeof(uint64_t));
+
+            try {
+                DoHeartbeat();
+            } catch (Delphi::Exception::Exception &E) {
+                DoServerEventHandlerException(AHandler, E);
+            }
+        }
+        //--------------------------------------------------------------------------------------------------------------
+
+        void CStreamServer::DoHeartbeat() {
+
+        }
+        //--------------------------------------------------------------------------------------------------------------
+
         void CStreamServer::DoRead(CUDPAsyncServer *Sender, CSocketHandle *Socket, CManagedBuffer &Buffer) {
             BYTE ch;
             TCHAR szString[MAX_BUFFER_SIZE / 4 + 1] = {0};
@@ -215,7 +234,7 @@ namespace Apostol {
             Stream.SetLength(Buffer.Size());
             Buffer.Extract(Stream.Data(), Stream.Size());
 
-            Parse(Sender, Socket, "lpwan", Stream);
+            Parse(Sender, Socket, "LPWAN", Stream);
 
             CString Bin;
             for (int i = 0; i < Stream.Size(); i++) {
@@ -243,8 +262,8 @@ namespace Apostol {
         }
         //--------------------------------------------------------------------------------------------------------------
 
-        void CStreamServer::DoException(CTCPConnection *AConnection, Delphi::Exception::Exception *AException) {
-            Log()->Error(APP_LOG_EMERG, 0, AException->what());
+        void CStreamServer::DoException(CTCPConnection *AConnection, const Delphi::Exception::Exception &E) {
+            Log()->Error(APP_LOG_EMERG, 0, E.what());
             sig_reopen = 1;
         }
         //--------------------------------------------------------------------------------------------------------------
@@ -285,8 +304,8 @@ namespace Apostol {
         }
         //--------------------------------------------------------------------------------------------------------------
 
-        void CStreamServer::DoPostgresQueryException(CPQPollQuery *APollQuery, Delphi::Exception::Exception *AException) {
-            Log()->Error(APP_LOG_EMERG, 0, AException->what());
+        void CStreamServer::DoPostgresQueryException(CPQPollQuery *APollQuery, const Delphi::Exception::Exception &E) {
+            Log()->Error(APP_LOG_EMERG, 0, E.what());
         }
         //--------------------------------------------------------------------------------------------------------------
     }

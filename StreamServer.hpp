@@ -33,7 +33,7 @@ namespace Apostol {
 
         //--------------------------------------------------------------------------------------------------------------
 
-        //-- CStreamServer ----------------------------------------------------------------------------------------
+        //-- CStreamServer ---------------------------------------------------------------------------------------------
 
         //--------------------------------------------------------------------------------------------------------------
 
@@ -53,14 +53,18 @@ namespace Apostol {
 
         protected:
 
+            void DoTimer(CPollEventHandler *AHandler) override;
+
+            void DoHeartbeat();
+
             void DoRead(CUDPAsyncServer *Server, CSocketHandle *Socket, CManagedBuffer &Buffer);
             void DoWrite(CUDPAsyncServer *Server, CSocketHandle *Socket, CSimpleBuffer &Buffer);
 
-            void DoException(CTCPConnection *AConnection, Delphi::Exception::Exception *AException);
+            void DoException(CTCPConnection *AConnection, const Delphi::Exception::Exception &E);
             bool DoExecute(CTCPConnection *AConnection) override;
 
             void DoPostgresQueryExecuted(CPQPollQuery *APollQuery);
-            void DoPostgresQueryException(CPQPollQuery *APollQuery, Delphi::Exception::Exception *AException);
+            void DoPostgresQueryException(CPQPollQuery *APollQuery, const Delphi::Exception::Exception &E);
 
         public:
 
