@@ -53,7 +53,7 @@ namespace Apostol {
             m_Server.ServerName() = Title;
 
             m_Server.DefaultIP() = Config()->Listen();
-            m_Server.DefaultPort(Config()->IniFile().ReadInteger("stream", "port", Config()->Port()));
+            m_Server.DefaultPort(Config()->IniFile().ReadInteger("process/StreamServer", "port", Config()->Port()));
 
 #if defined(_GLIBCXX_RELEASE) && (_GLIBCXX_RELEASE >= 9)
             m_Server.OnVerbose([this](auto && Sender, auto && AConnection, auto && AFormat, auto && args) { DoVerbose(Sender, AConnection, AFormat, args); });
