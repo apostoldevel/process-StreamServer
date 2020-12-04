@@ -42,10 +42,29 @@ namespace Apostol {
 
         private:
 
+            CString m_Token;
+            CString m_Session;
+            CString m_Secret;
+            CString m_ClientId;
+            CString m_ClientSecret;
+            CString m_Agent;
+            CString m_Host;
+
+            CDateTime m_AuthDate;
+
+            int m_HeartbeatInterval;
+
             CUDPAsyncServer m_Server;
 
             void BeforeRun() override;
             void AfterRun() override;
+
+            static ushort GetCRC16(void *buffer, size_t size);
+
+            void Authentication();
+            void Authorize(CStringList &SQL, const CString &Username);
+
+            static void SetArea(CStringList &SQL, const CString &Area);
 
             void InitializeStreamServer(const CString &Title);
 
@@ -56,6 +75,7 @@ namespace Apostol {
             void DoTimer(CPollEventHandler *AHandler) override;
 
             void DoHeartbeat();
+            void DoError(const Delphi::Exception::Exception &E);
 
             void DoRead(CUDPAsyncServer *Server, CSocketHandle *Socket, CManagedBuffer &Buffer);
             void DoWrite(CUDPAsyncServer *Server, CSocketHandle *Socket, CSimpleBuffer &Buffer);
@@ -76,9 +96,10 @@ namespace Apostol {
                 return new CStreamServer(AParent, AApplication);
             }
 
-            void Run() override;
+            void Debug(CSocketHandle *Socket, const CString &Stream);
 
-            void LoadConfig();
+            void Run() override;
+            void Reload() override;
 
             CPQPollQuery *GetQuery(CPollConnection *AConnection) override;
 
