@@ -385,7 +385,7 @@ namespace Apostol {
                     length = (length << 8) | byte;
                 }
 
-                if ((length == 0) || (length >= Stream.Size() - Stream.Position()))
+                if ((length == 0) || (length > Stream.Size() - Stream.Position()))
                     break;
 
                 Data.SetLength(length + size);
