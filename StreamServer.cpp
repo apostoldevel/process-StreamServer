@@ -129,7 +129,7 @@ namespace Apostol {
                     try {
                         m_Server.Wait();
                     } catch (std::exception &e) {
-                        Log()->Error(APP_LOG_EMERG, 0, e.what());
+                        Log()->Error(APP_LOG_ERR, 0, "%s", e.what());
                     }
 
                     if (sig_terminate || sig_quit) {
@@ -155,7 +155,7 @@ namespace Apostol {
                     }
                 }
             } catch (std::exception &e) {
-                Log()->Error(APP_LOG_EMERG, 0, e.what());
+                Log()->Error(APP_LOG_ERR, 0, "%s", e.what());
                 ExitSigAlarm(5 * 1000);
             }
 
@@ -338,7 +338,7 @@ namespace Apostol {
 
             m_AuthDate = now + (CDateTime) m_HeartbeatInterval / MSecsPerDay;
 
-            Log()->Error(APP_LOG_EMERG, 0, E.what());
+            Log()->Error(APP_LOG_ERR, 0, "%s", E.what());
         }
         //--------------------------------------------------------------------------------------------------------------
 
@@ -410,7 +410,7 @@ namespace Apostol {
         //--------------------------------------------------------------------------------------------------------------
 
         void CStreamServer::DoException(CTCPConnection *AConnection, const Delphi::Exception::Exception &E) {
-            Log()->Error(APP_LOG_EMERG, 0, E.what());
+            Log()->Error(APP_LOG_ERR, 0, "%s", E.what());
             sig_reopen = 1;
         }
         //--------------------------------------------------------------------------------------------------------------
@@ -446,13 +446,13 @@ namespace Apostol {
                         throw Delphi::Exception::EDBError(pResult->GetValue(0, 2));
                 }
             } catch (std::exception &e) {
-                Log()->Error(APP_LOG_EMERG, 0, e.what());
+                Log()->Error(APP_LOG_ERR, 0, "%s", e.what());
             }
         }
         //--------------------------------------------------------------------------------------------------------------
 
         void CStreamServer::DoPostgresQueryException(CPQPollQuery *APollQuery, const Delphi::Exception::Exception &E) {
-            Log()->Error(APP_LOG_EMERG, 0, E.what());
+            Log()->Error(APP_LOG_ERR, 0, "%s", E.what());
         }
         //--------------------------------------------------------------------------------------------------------------
 
