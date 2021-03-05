@@ -92,7 +92,7 @@ namespace Apostol {
 
             Application()->Header(Application()->Name() + ": stream process");
 
-            Log()->Debug(0, MSG_PROCESS_START, GetProcessName(), Application()->Header().c_str());
+            Log()->Debug(APP_LOG_DEBUG_CORE, MSG_PROCESS_START, GetProcessName(), Application()->Header().c_str());
 
             InitSignals();
 
@@ -124,42 +124,42 @@ namespace Apostol {
 
                 while (!sig_exiting) {
 
-                    log_debug0(APP_LOG_DEBUG_EVENT, Log(), 0, "stream server process cycle");
+                    Log()->Debug(APP_LOG_DEBUG_EVENT, _T("stream server process cycle"));
 
                     try {
                         m_Server.Wait();
                     } catch (std::exception &e) {
-                        Log()->Error(APP_LOG_ERR, 0, "%s", e.what());
+                        Log()->Error(APP_LOG_ERR, 0, _T("%s"), e.what());
                     }
 
                     if (sig_terminate || sig_quit) {
                         if (sig_quit) {
                             sig_quit = 0;
-                            Log()->Error(APP_LOG_NOTICE, 0, "gracefully shutting down");
-                            Application()->Header("stream server process is shutting down");
+                            Log()->Debug(APP_LOG_DEBUG_EVENT, _T("gracefully shutting down"));
+                            Application()->Header(_T("stream server process is shutting down"));
                         }
 
                         if (!sig_exiting) {
                             sig_exiting = 1;
-                            Log()->Error(APP_LOG_NOTICE, 0, "exiting stream server process");
+                            Log()->Debug(APP_LOG_DEBUG_EVENT, _T("exiting stream server process"));
                         }
                     }
 
                     if (sig_reopen) {
                         sig_reopen = 0;
 
-                        Log()->Error(APP_LOG_NOTICE, 0, "stream server reconnect");
+                        Log()->Debug(APP_LOG_DEBUG_EVENT, _T("stream server reconnect"));
 
                         m_Server.ActiveLevel(alBinding);
                         m_Server.ActiveLevel(alActive);
                     }
                 }
             } catch (std::exception &e) {
-                Log()->Error(APP_LOG_ERR, 0, "%s", e.what());
+                Log()->Error(APP_LOG_ERR, 0, _T("%s"), e.what());
                 ExitSigAlarm(5 * 1000);
             }
 
-            Log()->Error(APP_LOG_NOTICE, 0, "stop stream server process");
+            Log()->Debug(APP_LOG_DEBUG_EVENT, _T("stop stream server process"));
         }
         //--------------------------------------------------------------------------------------------------------------
 
