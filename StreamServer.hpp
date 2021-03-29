@@ -64,7 +64,7 @@ namespace Apostol {
             void Authentication();
             void Authorize(CStringList &SQL, const CString &Username);
 
-            static void SetArea(CStringList &SQL, const CString &Area);
+            static void SetArea(CStringList &SQL, const CString &Area = CString());
 
             void InitializeStreamServer(const CString &Title);
 

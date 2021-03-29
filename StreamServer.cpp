@@ -255,9 +255,13 @@ namespace Apostol {
         //--------------------------------------------------------------------------------------------------------------
 
         void CStreamServer::SetArea(CStringList &SQL, const CString &Area) {
-            SQL.Add(CString().Format("SELECT * FROM api.set_session_area(%s);",
-                                     PQQuoteLiteral(Area).c_str()
-            ));
+            if (Area.IsEmpty()) {
+                SQL.Add("SELECT * FROM api.set_session_area(current_database());");
+            } else {
+                SQL.Add(CString().Format("SELECT * FROM api.set_session_area(%s);",
+                                         PQQuoteLiteral(Area).c_str()
+                ));
+            }
         }
         //--------------------------------------------------------------------------------------------------------------
 
@@ -298,7 +302,7 @@ namespace Apostol {
             CStringList SQL;
 
             Authorize(SQL, API_BOT_USERNAME);
-            SetArea(SQL, "default");
+            SetArea(SQL);
 
             SQL.Add(CString().MaxFormatSize(256 + Protocol.Size() + Base64.Size()).
                 Format("SELECT * FROM stream.parse('%s', '%s:%d', '%s');",
