@@ -361,7 +361,7 @@ namespace Apostol {
             size_t size, streamSize;
 
             ushort length;
-            ushort crc;
+            ushort crc, crcData;
 
             CString Stream;
             CString Data;
@@ -416,10 +416,11 @@ namespace Apostol {
                 Log()->Stream("[%s:%d] Data:", Socket->PeerIP(), Socket->PeerPort());
                 Debug(Socket, Data);
 
-                crc = (Data[length] << 8) | Data[length - 1];
+                crc = ((BYTE) Data[length] << 8) | (BYTE) Data[length - 1];
+                crcData = GetCRC16(Data.Data(), Data.Size() - 2);
 
-                if (crc != GetCRC16(Data.Data(), Data.Size() - 2)) {
-                    Log()->Stream("[%s:%d] [%d] [%d] Invalid CRC.", Socket->PeerIP(), Socket->PeerPort(), crc);
+                if (crc != crcData) {
+                    Log()->Stream("[%s:%d] [%d] [%d] [%d] Invalid CRC.", Socket->PeerIP(), Socket->PeerPort(), crc, crcData);
                     break;
                 }
 
