@@ -356,8 +356,9 @@ namespace Apostol {
         //--------------------------------------------------------------------------------------------------------------
 
         void CStreamServer::DoRead(CUDPAsyncServer *Sender, CSocketHandle *Socket, CManagedBuffer &Buffer) {
+
             BYTE byte;
-            size_t size, pos;
+            size_t size, streamSize;
 
             ushort length;
             ushort crc;
@@ -368,6 +369,7 @@ namespace Apostol {
             Stream.SetLength(Buffer.Size());
             Buffer.Extract(Stream.Data(), Stream.Size());
 
+            Log()->Stream("[%s:%d] DoRead:", Socket->PeerIP(), Socket->PeerPort());
             Debug(Socket, Stream);
 
             while (Stream.Position() < Stream.Size()) {
@@ -389,19 +391,37 @@ namespace Apostol {
                     length = (length << 8) | byte;
                 }
 
-                if ((length == 0) || (length > Stream.Size() - Stream.Position()))
-                    break;
+                streamSize = Stream.Size() - Stream.Position();
 
-                Data.SetLength(length + size);
+                if ((length == 0) || (length > streamSize)) {
+                    Data.SetLength(size + streamSize);
+                    Data.WriteBuffer(&length, size);
+
+                    if (streamSize > 0) {
+                        Data.WriteBuffer(&length, size);
+                        Stream.ReadBuffer(Data.Data() + size, streamSize);
+                    }
+
+                    Log()->Stream("[%s:%d] Incorrect:", Socket->PeerIP(), Socket->PeerPort());
+                    Debug(Socket, Data);
+
+                    Log()->Stream("[%s:%d] [%d:%d:%d] [%d] Incorrect length.", Socket->PeerIP(), Socket->PeerPort(), Stream.Size(), Stream.Position(), streamSize, length);
+                    break;
+                }
+
+                Data.SetLength(size + length);
                 Data.WriteBuffer(&length, size);
                 Stream.ReadBuffer(Data.Data() + size, length);
 
+                Log()->Stream("[%s:%d] Data:", Socket->PeerIP(), Socket->PeerPort());
                 Debug(Socket, Data);
 
                 crc = (Data[length] << 8) | Data[length - 1];
 
-                if (crc != GetCRC16(Data.Data(), Data.Size() - 2))
+                if (crc != GetCRC16(Data.Data(), Data.Size() - 2)) {
+                    Log()->Stream("[%s:%d] [%d] [%d] Invalid CRC.", Socket->PeerIP(), Socket->PeerPort(), crc);
                     break;
+                }
 
                 Parse(Sender, Socket, PROTOCOL_NAME, Data);
             }
@@ -409,7 +429,15 @@ namespace Apostol {
         //--------------------------------------------------------------------------------------------------------------
 
         void CStreamServer::DoWrite(CUDPAsyncServer *Server, CSocketHandle *Socket, CSimpleBuffer &Buffer) {
-            //DebugMessage("[%s] BIN: %s\n", NowStr, Bin.c_str());
+            if (Buffer.Size() > 0) {
+                CString Stream;
+
+                Stream.SetLength(Buffer.Size());
+                Buffer.Extract(Stream.Data(), Stream.Size());
+
+                Log()->Stream("[%s:%d] DoWrite:", Socket->PeerIP(), Socket->PeerPort());
+                Debug(Socket, Stream);
+            }
         }
         //--------------------------------------------------------------------------------------------------------------
 
@@ -420,19 +448,19 @@ namespace Apostol {
         //--------------------------------------------------------------------------------------------------------------
 
         CPQPollQuery *CStreamServer::GetQuery(CPollConnection *AConnection) {
-            auto LQuery = CServerProcess::GetQuery(AConnection);
+            auto pQuery = CServerProcess::GetQuery(AConnection);
 
-            if (Assigned(LQuery)) {
+            if (Assigned(pQuery)) {
 #if defined(_GLIBCXX_RELEASE) && (_GLIBCXX_RELEASE >= 9)
-                LQuery->OnPollExecuted([this](auto && APollQuery) { DoPostgresQueryExecuted(APollQuery); });
-                LQuery->OnException([this](auto && APollQuery, auto && AException) { DoPostgresQueryException(APollQuery, AException); });
+                pQuery->OnPollExecuted([this](auto && APollQuery) { DoPostgresQueryExecuted(APollQuery); });
+                pQuery->OnException([this](auto && APollQuery, auto && AException) { DoPostgresQueryException(APollQuery, AException); });
 #else
-                LQuery->OnPollExecuted(std::bind(&CStreamServer::DoPostgresQueryExecuted, this, _1));
-                LQuery->OnException(std::bind(&CStreamServer::DoPostgresQueryException, this, _1, _2));
+                pQuery->OnPollExecuted(std::bind(&CStreamServer::DoPostgresQueryExecuted, this, _1));
+                pQuery->OnException(std::bind(&CStreamServer::DoPostgresQueryException, this, _1, _2));
 #endif
             }
 
-            return LQuery;
+            return pQuery;
         }
         //--------------------------------------------------------------------------------------------------------------
 
@@ -461,10 +489,8 @@ namespace Apostol {
         //--------------------------------------------------------------------------------------------------------------
 
         void CStreamServer::Debug(CSocketHandle *Socket, const CString &Stream) {
-#ifdef _DEBUG
             BYTE ch;
 
-            TCHAR szString[MAX_BUFFER_SIZE / 4 + 1] = {0};
             CString Bin;
 
             for (int i = 0; i < Stream.Size(); i++) {
@@ -472,7 +498,7 @@ namespace Apostol {
                 if (IsCtl(ch) || (ch >= 128)) {
                     Bin.Append('.');
                 } else {
-                    Bin.Append(ch);
+                    Bin.Append((TCHAR) ch);
                 }
             }
 
@@ -480,11 +506,8 @@ namespace Apostol {
             Hex.SetLength(Stream.Size() * 3);
             ByteToHexStr((LPSTR) Hex.Data(), Hex.Size(), (LPCBYTE) Stream.Data(), Stream.Size(), ' ');
 
-            const auto NowStr = DateTimeToStr(Now(), szString, MAX_BUFFER_SIZE / 4);
-
-            DebugMessage("[%s] [%s:%d] BIN: %s\n", NowStr, Socket->PeerIP(), Socket->PeerPort(), Bin.c_str());
-            DebugMessage("[%s] [%s:%d] HEX: %s\n\n", NowStr, Socket->PeerIP(), Socket->PeerPort(), Hex.c_str());
-#endif
+            Log()->Stream("[%s:%d] BIN: %d: %s", Socket->PeerIP(), Socket->PeerPort(), Stream.Size(), Bin.c_str());
+            Log()->Stream("[%s:%d] HEX: %s", Socket->PeerIP(), Socket->PeerPort(), Hex.c_str());
         }
     }
 }

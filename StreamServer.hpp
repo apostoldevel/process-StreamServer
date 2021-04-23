@@ -96,7 +96,7 @@ namespace Apostol {
                 return new CStreamServer(AParent, AApplication);
             }
 
-            void Debug(CSocketHandle *Socket, const CString &Stream);
+            static void Debug(CSocketHandle *Socket, const CString &Stream);
 
             void Run() override;
             void Reload() override;
