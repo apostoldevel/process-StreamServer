@@ -197,12 +197,12 @@ namespace Apostol {
 
             auto OnExecuted = [this](CPQPollQuery *APollQuery) {
 
-                CPQueryResults Result;
+                CPQueryResults pqResults;
                 CStringList SQL;
 
                 try {
-                    CApostolModule::QueryToResults(APollQuery, Result);
-                    const auto &login = Result[0][0];
+                    CApostolModule::QueryToResults(APollQuery, pqResults);
+                    const auto &login = pqResults[0][0];
 
                     m_Session = login["session"];
                     m_Secret = login["secret"];
