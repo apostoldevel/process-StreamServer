@@ -10,7 +10,7 @@ Module Name:
 
 Notices:
 
-  Proccess: Stream Server
+  Process: Stream Server
 
 Author:
 
@@ -21,8 +21,8 @@ Author:
 
 --*/
 
-#ifndef APOSTOL_STREAMSEREVER_HPP
-#define APOSTOL_STREAMSEREVER_HPP
+#ifndef APOSTOL_STREAM_SEREVER_HPP
+#define APOSTOL_STREAM_SEREVER_HPP
 //----------------------------------------------------------------------------------------------------------------------
 
 extern "C++" {
@@ -42,13 +42,13 @@ namespace Apostol {
 
         private:
 
-            CString m_Token;
             CString m_Session;
             CString m_Secret;
             CString m_ClientId;
             CString m_ClientSecret;
             CString m_Agent;
             CString m_Host;
+            CString m_ApiBot;
 
             CDateTime m_AuthDate;
 
@@ -62,9 +62,6 @@ namespace Apostol {
             static ushort GetCRC16(void *buffer, size_t size);
 
             void Authentication();
-            void Authorize(CStringList &SQL, const CString &Username);
-
-            static void SetArea(CStringList &SQL, const CString &Area = CString());
 
             void InitializeStreamServer(const CString &Title);
 
@@ -111,4 +108,4 @@ namespace Apostol {
 
 using namespace Apostol::Processes;
 }
-#endif //APOSTOL_STREAMSEREVER_HPP
+#endif //APOSTOL_STREAM_SEREVER_HPP

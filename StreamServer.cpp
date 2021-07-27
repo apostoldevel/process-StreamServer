@@ -10,7 +10,7 @@ Module Name:
 
 Notices:
 
-  Proccess: Stream Server
+  Process: Stream Server
 
 Author:
 
@@ -25,7 +25,7 @@ Author:
 #include "StreamServer.hpp"
 //----------------------------------------------------------------------------------------------------------------------
 
-#define PROVIDER_APPLICATION_NAME "service"
+#define SERVICE_APPLICATION_NAME "service"
 #define CONFIG_SECTION_NAME "process/StreamServer"
 #define PROTOCOL_NAME "LPWAN"
 
@@ -49,9 +49,7 @@ namespace Apostol {
             m_Agent = "Streaming Server";
             m_Host = CApostolModule::GetIPByHostName(CApostolModule::GetHostName());
 
-            const auto now = Now();
-
-            m_AuthDate = now;
+            m_AuthDate = 0;
 
             m_HeartbeatInterval = 5000;
         }
@@ -202,10 +200,11 @@ namespace Apostol {
 
                 try {
                     CApostolModule::QueryToResults(APollQuery, pqResults);
-                    const auto &login = pqResults[0][0];
 
-                    m_Session = login["session"];
-                    m_Secret = login["secret"];
+                    m_Session = pqResults[0][0]["session"];
+                    m_Secret = pqResults[0][0]["secret"];
+
+                    m_ApiBot = pqResults[1][0]["get_session"];
 
                     m_AuthDate = Now() + (CDateTime) 24 / HoursPerDay;
                 } catch (Delphi::Exception::Exception &E) {
@@ -217,50 +216,24 @@ namespace Apostol {
                 DoError(E);
             };
 
-            const CString Application(PROVIDER_APPLICATION_NAME);
+            CString Application(SERVICE_APPLICATION_NAME);
 
             const auto &Providers = Server().Providers();
             const auto &Provider = Providers.DefaultValue();
 
+            m_ClientId = Provider.ClientId(Application);
+            m_ClientSecret = Provider.Secret(Application);
+
             CStringList SQL;
 
+            api::login(SQL, m_ClientId, m_ClientSecret, m_Agent, m_Host);
+
+            api::get_session(SQL, API_BOT_USERNAME, m_Agent, m_Host);
+
             try {
-                m_ClientId = Provider.ClientId(Application);
-                m_ClientSecret = Provider.Secret(Application);
-
-                SQL.Add(CString().Format("SELECT * FROM api.login(%s, %s, %s, %s);",
-                                         PQQuoteLiteral(m_ClientId).c_str(),
-                                         PQQuoteLiteral(m_ClientSecret).c_str(),
-                                         PQQuoteLiteral(m_Agent).c_str(),
-                                         PQQuoteLiteral(m_Host).c_str()
-                ));
-
                 ExecSQL(SQL, nullptr, OnExecuted, OnException);
             } catch (Delphi::Exception::Exception &E) {
                 DoError(E);
-            }
-        }
-        //--------------------------------------------------------------------------------------------------------------
-
-        void CStreamServer::Authorize(CStringList &SQL, const CString &Username) {
-            SQL.Add(CString().Format("SELECT * FROM api.authorize(%s);",
-                                     PQQuoteLiteral(m_Session).c_str()
-            ));
-
-            SQL.Add(CString().Format("SELECT * FROM api.su(%s, %s);",
-                                     PQQuoteLiteral(Username).c_str(),
-                                     PQQuoteLiteral(m_ClientSecret).c_str()
-            ));
-        }
-        //--------------------------------------------------------------------------------------------------------------
-
-        void CStreamServer::SetArea(CStringList &SQL, const CString &Area) {
-            if (Area.IsEmpty()) {
-                SQL.Add("SELECT * FROM api.set_session_area(current_database());");
-            } else {
-                SQL.Add(CString().Format("SELECT * FROM api.set_session_area(%s);",
-                                         PQQuoteLiteral(Area).c_str()
-                ));
             }
         }
         //--------------------------------------------------------------------------------------------------------------
@@ -270,7 +243,7 @@ namespace Apostol {
             auto OnExecuted = [this, Server, Socket](CPQPollQuery *APollQuery) {
 
                 CPQResult *pResult;
-                CString LResult;
+                CString Result;
 
                 try {
                     for (int I = 0; I < APollQuery->Count(); I++) {
@@ -283,8 +256,8 @@ namespace Apostol {
                             continue;
 
                         if (!pResult->GetIsNull(0, 0)) {
-                            LResult = base64_decode(pResult->GetValue(0, 0));
-                            Server->OutputBuffer().Write(LResult.Data(), LResult.Size());
+                            Result = base64_decode(pResult->GetValue(0, 0));
+                            Server->OutputBuffer().Write(Result.Data(), Result.Size());
                             Server->Send(Socket);
                         }
                     }
@@ -301,8 +274,8 @@ namespace Apostol {
 
             CStringList SQL;
 
-            Authorize(SQL, API_BOT_USERNAME);
-            SetArea(SQL);
+            api::authorize(SQL, m_ApiBot);
+            api::set_area(SQL);
 
             SQL.Add(CString().MaxFormatSize(256 + Protocol.Size() + Base64.Size()).
                 Format("SELECT * FROM stream.parse('%s', '%s:%d', '%s');",
@@ -322,8 +295,8 @@ namespace Apostol {
         void CStreamServer::DoTimer(CPollEventHandler *AHandler) {
             uint64_t exp;
 
-            auto LTimer = dynamic_cast<CEPollTimer *> (AHandler->Binding());
-            LTimer->Read(&exp, sizeof(uint64_t));
+            auto pTimer = dynamic_cast<CEPollTimer *> (AHandler->Binding());
+            pTimer->Read(&exp, sizeof(uint64_t));
 
             try {
                 DoHeartbeat();
@@ -336,7 +309,6 @@ namespace Apostol {
         void CStreamServer::DoError(const Delphi::Exception::Exception &E) {
             const auto now = Now();
 
-            m_Token.Clear();
             m_Session.Clear();
             m_Secret.Clear();
 
