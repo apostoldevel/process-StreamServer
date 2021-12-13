@@ -46,7 +46,7 @@ namespace Apostol {
         CStreamServer::CStreamServer(CCustomProcess *AParent, CApplication *AApplication):
                 inherited(AParent, AApplication, "stream process") {
 
-            m_Agent = "Streaming Server";
+            m_Agent = CString().Format("%s (Streaming Server)", Application()->Title().c_str());
             m_Host = CApostolModule::GetIPByHostName(CApostolModule::GetHostName());
 
             m_AuthDate = 0;
@@ -216,13 +216,11 @@ namespace Apostol {
                 DoError(E);
             };
 
-            CString Application(SERVICE_APPLICATION_NAME);
+            const auto &caProviders = Server().Providers();
+            const auto &caProvider = caProviders.DefaultValue();
 
-            const auto &Providers = Server().Providers();
-            const auto &Provider = Providers.DefaultValue();
-
-            m_ClientId = Provider.ClientId(Application);
-            m_ClientSecret = Provider.Secret(Application);
+            m_ClientId = caProvider.ClientId(SERVICE_APPLICATION_NAME);
+            m_ClientSecret = caProvider.Secret(SERVICE_APPLICATION_NAME);
 
             CStringList SQL;
 
