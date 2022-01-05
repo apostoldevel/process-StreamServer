@@ -46,7 +46,7 @@ namespace Apostol {
         CStreamServer::CStreamServer(CCustomProcess *AParent, CApplication *AApplication):
                 inherited(AParent, AApplication, "stream process") {
 
-            m_Agent = CString().Format("%s (Streaming Server)", Application()->Title().c_str());
+            m_Agent = CString().Format("Streaming Server (%s)", Application()->Title().c_str());
             m_Host = CApostolModule::GetIPByHostName(CApostolModule::GetHostName());
 
             m_AuthDate = 0;
