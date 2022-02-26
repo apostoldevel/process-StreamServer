@@ -58,7 +58,7 @@ namespace Apostol {
         void CStreamServer::InitializeStreamServer(const CString &Title) {
             
             m_Server.ServerName() = Title;
-            m_Server.PollStack(PQServer().PollStack());
+            m_Server.PollStack(PQClient().PollStack());
 
             m_Server.DefaultIP() = Config()->Listen();
             m_Server.DefaultPort(Config()->IniFile().ReadInteger(CONFIG_SECTION_NAME, "port", Config()->Port()));
@@ -99,9 +99,9 @@ namespace Apostol {
             SetUser(Config()->User(), Config()->Group());
 
             InitializeStreamServer(Application()->Title());
-            InitializePQServer(Application()->Title());
+            InitializePQClient(Application()->Title());
 
-            PQServerStart("helper");
+            PQClientStart("helper");
 
             SigProcMask(SIG_UNBLOCK, SigAddSet(&set));
 
@@ -111,7 +111,7 @@ namespace Apostol {
 
         void CStreamServer::AfterRun() {
             CApplicationProcess::AfterRun();
-            PQServerStop();
+            PQClientStop();
         }
         //--------------------------------------------------------------------------------------------------------------
 
