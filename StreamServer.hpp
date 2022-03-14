@@ -21,8 +21,8 @@ Author:
 
 --*/
 
-#ifndef APOSTOL_STREAM_SEREVER_HPP
-#define APOSTOL_STREAM_SEREVER_HPP
+#ifndef APOSTOL_STREAM_SERVER_HPP
+#define APOSTOL_STREAM_SERVER_HPP
 //----------------------------------------------------------------------------------------------------------------------
 
 extern "C++" {
@@ -108,4 +108,4 @@ namespace Apostol {
 
 using namespace Apostol::Processes;
 }
-#endif //APOSTOL_STREAM_SEREVER_HPP
+#endif //APOSTOL_STREAM_SERVER_HPP
