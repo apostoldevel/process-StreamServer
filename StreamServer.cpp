@@ -99,7 +99,7 @@ namespace Apostol {
             SetUser(Config()->User(), Config()->Group());
 
             InitializeStreamServer(Application()->Title());
-            InitializePQClient(Application()->Title());
+            InitializePQClient(Application()->Title(), 1, Config()->PostgresPollMin());
 
             PQClientStart("helper");
 
