@@ -65,13 +65,14 @@ namespace Apostol {
 
             void InitializeStreamServer(const CString &Title);
 
+            void Heartbeat(CDateTime Now);
+
             void Parse(CUDPAsyncServer *Server, CSocketHandle *Socket, const CString &Protocol, const CString &Data);
 
         protected:
 
             void DoTimer(CPollEventHandler *AHandler) override;
 
-            void DoHeartbeat();
             void DoError(const Delphi::Exception::Exception &E);
 
             void DoRead(CUDPAsyncServer *Server, CSocketHandle *Socket, CManagedBuffer &Buffer);

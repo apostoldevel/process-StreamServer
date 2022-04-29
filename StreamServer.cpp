@@ -58,7 +58,7 @@ namespace Apostol {
         void CStreamServer::InitializeStreamServer(const CString &Title) {
             
             m_Server.ServerName() = Title;
-            m_Server.PollStack(PQClient().PollStack());
+            m_Server.AllocateEventHandlers(PQClient());
 
             m_Server.DefaultIP() = Config()->Listen();
             m_Server.DefaultPort(Config()->IniFile().ReadInteger(CONFIG_SECTION_NAME, "port", Config()->Port()));
@@ -236,6 +236,13 @@ namespace Apostol {
         }
         //--------------------------------------------------------------------------------------------------------------
 
+        void CStreamServer::Heartbeat(CDateTime Now) {
+            if ((Now >= m_AuthDate)) {
+                Authentication();
+            }
+        }
+        //--------------------------------------------------------------------------------------------------------------
+
         void CStreamServer::Parse(CUDPAsyncServer *Server, CSocketHandle *Socket, const CString &Protocol, const CString &Data) {
 
             auto OnExecuted = [this, Server, Socket](CPQPollQuery *APollQuery) {
@@ -297,7 +304,7 @@ namespace Apostol {
             pTimer->Read(&exp, sizeof(uint64_t));
 
             try {
-                DoHeartbeat();
+                Heartbeat(AHandler->TimeStamp());
             } catch (Delphi::Exception::Exception &E) {
                 DoServerEventHandlerException(AHandler, E);
             }
@@ -305,23 +312,12 @@ namespace Apostol {
         //--------------------------------------------------------------------------------------------------------------
 
         void CStreamServer::DoError(const Delphi::Exception::Exception &E) {
-            const auto now = Now();
-
             m_Session.Clear();
             m_Secret.Clear();
 
-            m_AuthDate = now + (CDateTime) m_HeartbeatInterval / MSecsPerDay;
+            m_AuthDate = Now() + (CDateTime) m_HeartbeatInterval / MSecsPerDay;
 
             Log()->Error(APP_LOG_ERR, 0, "%s", E.what());
-        }
-        //--------------------------------------------------------------------------------------------------------------
-
-        void CStreamServer::DoHeartbeat() {
-            const auto now = Now();
-
-            if ((now >= m_AuthDate)) {
-                Authentication();
-            }
         }
         //--------------------------------------------------------------------------------------------------------------
 
