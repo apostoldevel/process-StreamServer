@@ -56,12 +56,11 @@ namespace Apostol {
         //--------------------------------------------------------------------------------------------------------------
 
         void CStreamServer::InitializeStreamServer(const CString &Title) {
-            
             m_Server.ServerName() = Title;
-            m_Server.AllocateEventHandlers(PQClient());
+            m_Server.AllocateEventHandlers(GetPQClient());
 
             m_Server.DefaultIP() = Config()->Listen();
-            m_Server.DefaultPort(Config()->IniFile().ReadInteger(CONFIG_SECTION_NAME, "port", Config()->Port()));
+            m_Server.DefaultPort(Config()->IniFile().ReadInteger(CONFIG_SECTION_NAME, "port", (ushort) Config()->Port()));
 
 #if defined(_GLIBCXX_RELEASE) && (_GLIBCXX_RELEASE >= 9)
             m_Server.OnVerbose([this](auto && Sender, auto && AConnection, auto && AFormat, auto && args) { DoVerbose(Sender, AConnection, AFormat, args); });
@@ -98,10 +97,11 @@ namespace Apostol {
 
             SetUser(Config()->User(), Config()->Group());
 
-            InitializeStreamServer(Application()->Title());
-            InitializePQClient(Application()->Title(), 1, Config()->PostgresPollMin());
+            InitializePQClients(Application()->Title(), 1, Config()->PostgresPollMin());
 
             PQClientStart("helper");
+
+            InitializeStreamServer(Application()->Title());
 
             SigProcMask(SIG_UNBLOCK, SigAddSet(&set));
 
@@ -111,12 +111,11 @@ namespace Apostol {
 
         void CStreamServer::AfterRun() {
             CApplicationProcess::AfterRun();
-            PQClientStop();
+            PQClientsStop();
         }
         //--------------------------------------------------------------------------------------------------------------
 
         void CStreamServer::Run() {
-
             try {
                 m_Server.ActiveLevel(alActive);
 
