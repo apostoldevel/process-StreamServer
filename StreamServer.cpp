@@ -200,12 +200,19 @@ namespace Apostol {
                 try {
                     CApostolModule::QueryToResults(APollQuery, pqResults);
 
-                    m_Session = pqResults[0][0]["session"];
-                    m_Secret = pqResults[0][0]["secret"];
+                    const auto &login = pqResults[0];
+                    const auto &sessions = pqResults[1];
 
-                    m_ApiBot = pqResults[1][0]["get_session"];
+                    const auto &session = login.First()["session"];
+
+                    m_Sessions.Clear();
+                    for (int i = 0; i < sessions.Count(); ++i) {
+                        m_Sessions.Add(sessions[i]["get_sessions"]);
+                    }
 
                     m_AuthDate = Now() + (CDateTime) 24 / HoursPerDay;
+
+                    SignOut(session);
                 } catch (Delphi::Exception::Exception &E) {
                     DoError(E);
                 }
@@ -218,17 +225,30 @@ namespace Apostol {
             const auto &caProviders = Server().Providers();
             const auto &caProvider = caProviders.DefaultValue();
 
-            m_ClientId = caProvider.ClientId(SERVICE_APPLICATION_NAME);
-            m_ClientSecret = caProvider.Secret(SERVICE_APPLICATION_NAME);
+            const auto &clientId = caProvider.ClientId(SERVICE_APPLICATION_NAME);
+            const auto &clientSecret = caProvider.Secret(SERVICE_APPLICATION_NAME);
 
             CStringList SQL;
 
-            api::login(SQL, m_ClientId, m_ClientSecret, m_Agent, m_Host);
+            api::login(SQL, clientId, clientSecret, m_Agent, m_Host);
 
             api::get_session(SQL, API_BOT_USERNAME, m_Agent, m_Host);
 
             try {
                 ExecSQL(SQL, nullptr, OnExecuted, OnException);
+            } catch (Delphi::Exception::Exception &E) {
+                DoError(E);
+            }
+        }
+        //--------------------------------------------------------------------------------------------------------------
+
+        void CStreamServer::SignOut(const CString &Session) {
+            CStringList SQL;
+
+            api::signout(SQL, Session);
+
+            try {
+                ExecSQL(SQL);
             } catch (Delphi::Exception::Exception &E) {
                 DoError(E);
             }
@@ -276,22 +296,26 @@ namespace Apostol {
 
             const auto &Base64 = base64_encode(Data);
 
-            CStringList SQL;
+            for (int i = 0; i < m_Sessions.Count(); ++i) {
+                const auto &session = m_Sessions[i];
 
-            api::authorize(SQL, m_ApiBot);
-            api::set_area(SQL);
+                CStringList SQL;
 
-            SQL.Add(CString().MaxFormatSize(256 + Protocol.Size() + Base64.Size()).
-                Format("SELECT * FROM stream.parse('%s', '%s:%d', '%s');",
-                     Protocol.c_str(),
-                     Socket->PeerIP(), Socket->PeerPort(),
-                     Base64.c_str()
-            ));
+                api::authorize(SQL, session);
+                api::set_area(SQL);
 
-            try {
-                ExecSQL(SQL, nullptr, OnExecuted, OnException);
-            } catch (Delphi::Exception::Exception &E) {
-                DoError(E);
+                SQL.Add(CString().MaxFormatSize(256 + Protocol.Size() + Base64.Size()).
+                        Format("SELECT * FROM stream.parse('%s', '%s:%d', '%s');",
+                               Protocol.c_str(),
+                               Socket->PeerIP(), Socket->PeerPort(),
+                               Base64.c_str()
+                ));
+
+                try {
+                    ExecSQL(SQL, nullptr, OnExecuted, OnException);
+                } catch (Delphi::Exception::Exception &E) {
+                    DoError(E);
+                }
             }
         }
         //--------------------------------------------------------------------------------------------------------------
@@ -311,11 +335,7 @@ namespace Apostol {
         //--------------------------------------------------------------------------------------------------------------
 
         void CStreamServer::DoError(const Delphi::Exception::Exception &E) {
-            m_Session.Clear();
-            m_Secret.Clear();
-
             m_AuthDate = Now() + (CDateTime) m_HeartbeatInterval / MSecsPerDay;
-
             Log()->Error(APP_LOG_ERR, 0, "%s", E.what());
         }
         //--------------------------------------------------------------------------------------------------------------

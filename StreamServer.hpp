@@ -42,13 +42,10 @@ namespace Apostol {
 
         private:
 
-            CString m_Session;
-            CString m_Secret;
-            CString m_ClientId;
-            CString m_ClientSecret;
+            CStringList m_Sessions;
+
             CString m_Agent;
             CString m_Host;
-            CString m_ApiBot;
 
             CDateTime m_AuthDate;
 
@@ -62,6 +59,7 @@ namespace Apostol {
             static ushort GetCRC16(void *buffer, size_t size);
 
             void Authentication();
+            void SignOut(const CString &Session);
 
             void InitializeStreamServer(const CString &Title);
 
