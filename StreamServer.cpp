@@ -85,8 +85,6 @@ namespace Apostol {
         //--------------------------------------------------------------------------------------------------------------
 
         void CStreamServer::BeforeRun() {
-            sigset_t set;
-
             Application()->Header(Application()->Name() + ": stream process");
 
             Log()->Debug(APP_LOG_DEBUG_CORE, MSG_PROCESS_START, GetProcessName(), Application()->Header().c_str());
@@ -103,7 +101,7 @@ namespace Apostol {
 
             InitializeStreamServer(Application()->Title());
 
-            SigProcMask(SIG_UNBLOCK, SigAddSet(&set));
+            SigProcMask(SIG_UNBLOCK);
 
             SetTimerInterval(1000);
         }
