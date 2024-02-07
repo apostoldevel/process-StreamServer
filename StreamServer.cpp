@@ -30,6 +30,7 @@ Author:
 #define PROTOCOL_NAME "LPWAN"
 
 #define API_BOT_USERNAME "apibot"
+#define PG_CONFIG_NAME "helper"
 
 extern "C++" {
 
@@ -46,7 +47,7 @@ namespace Apostol {
         CStreamServer::CStreamServer(CCustomProcess *AParent, CApplication *AApplication):
                 inherited(AParent, AApplication, "stream process") {
 
-            m_Agent.Format("Streaming Server (%s)", Application()->Title().c_str());
+            m_Agent = CString().Format("%s (%s)", GApplication->Title().c_str(), ProcessName().c_str());
             m_Host = CApostolModule::GetIPByHostName(CApostolModule::GetHostName());
 
             m_AuthDate = 0;
@@ -57,7 +58,7 @@ namespace Apostol {
 
         void CStreamServer::InitializeStreamServer(const CString &Title) {
             m_Server.ServerName() = Title;
-            m_Server.AllocateEventHandlers(GetPQClient());
+            m_Server.AllocateEventHandlers(GetPQClient(PG_CONFIG_NAME));
 
             m_Server.DefaultIP() = Config()->Listen();
             m_Server.DefaultPort(Config()->IniFile().ReadInteger(CONFIG_SECTION_NAME, "port", (ushort) Config()->Port()));
@@ -97,7 +98,7 @@ namespace Apostol {
 
             InitializePQClients(Application()->Title(), 1, Config()->PostgresPollMin());
 
-            PQClientStart("helper");
+            PQClientStart(PG_CONFIG_NAME);
 
             InitializeStreamServer(Application()->Title());
 
@@ -428,23 +429,6 @@ namespace Apostol {
         void CStreamServer::DoException(CTCPConnection *AConnection, const Delphi::Exception::Exception &E) {
             Log()->Error(APP_LOG_ERR, 0, "%s", E.what());
             sig_reopen = 1;
-        }
-        //--------------------------------------------------------------------------------------------------------------
-
-        CPQPollQuery *CStreamServer::GetQuery(CPollConnection *AConnection) {
-            auto pQuery = CServerProcess::GetQuery(AConnection);
-
-            if (Assigned(pQuery)) {
-#if defined(_GLIBCXX_RELEASE) && (_GLIBCXX_RELEASE >= 9)
-                pQuery->OnPollExecuted([this](auto && APollQuery) { DoPostgresQueryExecuted(APollQuery); });
-                pQuery->OnException([this](auto && APollQuery, auto && AException) { DoPostgresQueryException(APollQuery, AException); });
-#else
-                pQuery->OnPollExecuted(std::bind(&CStreamServer::DoPostgresQueryExecuted, this, _1));
-                pQuery->OnException(std::bind(&CStreamServer::DoPostgresQueryException, this, _1, _2));
-#endif
-            }
-
-            return pQuery;
         }
         //--------------------------------------------------------------------------------------------------------------
 

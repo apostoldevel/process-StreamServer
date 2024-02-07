@@ -97,8 +97,6 @@ namespace Apostol {
             void Run() override;
             void Reload() override;
 
-            CPQPollQuery *GetQuery(CPollConnection *AConnection) override;
-
         };
         //--------------------------------------------------------------------------------------------------------------
 
