@@ -64,7 +64,7 @@ namespace Apostol {
             m_Server.DefaultPort(Config()->IniFile().ReadInteger(CONFIG_SECTION_NAME, "port", (ushort) Config()->Port()));
 
 #if defined(_GLIBCXX_RELEASE) && (_GLIBCXX_RELEASE >= 9)
-            m_Server.OnVerbose([this](auto && Sender, auto && AConnection, auto && AFormat, auto && args) { DoVerbose(Sender, AConnection, AFormat, args); });
+            //m_Server.OnVerbose([this](auto && Sender, auto && AFormat, auto && args) { DoVerbose(Sender, AFormat, args); });
             m_Server.OnAccessLog([this](auto && AConnection) { DoAccessLog(AConnection); });
             m_Server.OnException([this](auto && AConnection, auto && AException) { DoException(AConnection, AException); });
             m_Server.OnEventHandlerException([this](auto && AHandler, auto && AException) { DoServerEventHandlerException(AHandler, AException); });
@@ -73,7 +73,7 @@ namespace Apostol {
             m_Server.OnRead([this](auto && Server, auto && Socket, auto && Buffer) { DoRead(Server, Socket, Buffer); });
             m_Server.OnWrite([this](auto && Server, auto && Socket, auto && Buffer) { DoWrite(Server, Socket, Buffer); });
 #else
-            m_Server.OnVerbose(std::bind(&CStreamServer::DoVerbose, this, _1, _2, _3, _4));
+            //m_Server.OnVerbose(std::bind(&CStreamServer::DoVerbose, this, _1, _2, _3));
             m_Server.OnAccessLog(std::bind(&CStreamServer::DoAccessLog, this, _1));
             m_Server.OnException(std::bind(&CStreamServer::DoException, this, _1, _2));
             m_Server.OnEventHandlerException(std::bind(&CStreamServer::DoServerEventHandlerException, this, _1, _2));
