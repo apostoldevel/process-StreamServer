@@ -1,234 +1,261 @@
-Потоковый сервер (Streaming server)
--
-**Модуль** для [Апостол CRM](https://github.com/apostoldevel/apostol-crm).
+[![ru](https://img.shields.io/badge/lang-ru-green.svg)](README.ru-RU.md)
 
-Установка
--
-Следуйте указаниям по сборке и установке [Апостол CRM](https://github.com/apostoldevel/apostol-crm#%D1%81%D0%B1%D0%BE%D1%80%D0%BA%D0%B0-%D0%B8-%D1%83%D1%81%D1%82%D0%B0%D0%BD%D0%BE%D0%B2%D0%BA%D0%B0)
-
-Описание
--
-**Сервер потоковых данных** предназначен для приёма и передачи данных с мобильных устройств и интернет вещей.
-
-Протокол
+Stream Server
 -
 
-Протокол разработан без привязки к определенному устройству.
+**Process** for [Apostol](https://github.com/apostoldevel/apostol) + [db-platform](https://github.com/apostoldevel/db-platform) — **Apostol CRM**[^crm].
 
-### Терминология
+Description
+-
 
-* **Пакет** – единица передачи информации на уровне канала передачи данных.
+**Stream Server** is a C++ UDP streaming data server process for the [Apostol](https://github.com/apostoldevel/apostol) framework. It runs as an independent background process and ingests binary telemetry packets from IoT devices and mobile clients over UDP.
 
-* **Команда** – единица передачи информации прикладного уровня. Если команда длинная, она разбивается на пакеты.
+Key characteristics:
 
-Команда состоит из объединенных данных пакетов. Объединение выполняется от начального до конечного пакета в порядке возрастания номера пакета.
+* Written in C++14 using an asynchronous, non-blocking I/O model based on the **epoll** API — suitable for high-throughput, low-latency telemetry ingestion.
+* Uses a **UDP server** (`CUDPAsyncServer`) to receive datagrams from IoT and mobile devices without maintaining persistent connections.
+* Implements the **LPWAN** binary protocol — a lightweight, device-agnostic binary format with variable-length framing, device type and serial number identification, multi-packet command reassembly, and **CRC16 (Modbus)** integrity checking. All byte ordering is little-endian.
+* Forwards every validated packet to **PostgreSQL** via the `stream.parse()` PL/pgSQL function. All protocol decoding, device auto-registration, and data storage are handled inside the database.
+* Connects to PostgreSQL using the `[postgres/helper]` connection pool as the `apibot` user, authenticated via OAuth2 `client_credentials`.
+* Supports three device classes: **IoT** (`0xA0`), **Android** (`0xA1`), and **iOS** (`0xA2`).
+* On first contact from an unknown device, the database automatically creates a device record. Subsequent packets update GPS coordinates, battery level, and other sensor values.
 
-Пакеты команды могут приходить в хаотичном порядке. Не полностью собранная команда отбрасывается по таймауту.
+### How it fits into Apostol
 
-Если тип устройства неопределенный и идентификатор пустой, то это широковещательный пакет.
+Apostol runs a master process that spawns N worker processes and one or more independent background processes. `CStreamServer` is one such background process — it runs in its own OS process alongside (and independently of) the Apostol workers. When a UDP datagram arrives:
 
-#### Общая структура пакета
+1. The epoll event loop fires `DoRead`, which reads the raw datagram into a buffer.
+2. The variable-length `length` field (1 or 2 bytes) is parsed and the **CRC16** checksum is verified using the Modbus polynomial. Malformed or corrupt packets are silently discarded.
+3. Each validated packet binary is base64-encoded and passed to `Parse()`, which constructs the SQL call `SELECT * FROM stream.parse(protocol, peer_address, base64_data)` for every active authenticated session.
+4. PostgreSQL's `stream.Parse()` decodes the base64 payload, dispatches to the appropriate protocol handler (`stream.ParseLPWAN` for the **LPWAN** protocol), persists the raw packet to `stream.log`, and executes device-side business logic (device lookup or creation, GPS update, sensor value storage).
+5. If the database returns a non-null base64-encoded response, the C++ layer decodes it and sends a UDP reply back to the originating device.
 
- Поле | Размер поля | Тип данных | Назначение, примечания 
------ | ----------- | ---------- | ----------------------
- Длина пакета | 1 или 2 байта. | length | Длина всего пакета (все поля кроме поля длины) в байтах.
- Версия протокола | 1 байт | uint8 | Текущая версия = 1.
- Параметры | 1 байт | bin | 0 бит – начальный пакет команды; 1 бит – конечный пакет команды; 2 бит – пакет к устройству; 3 бит – ответ на запрос.
- Тип устройства | 1 байт | device_type | 0xA0 - IoT, 0xA1, 0xA2 - Мобильные устройства.
- Размер серийного номера | 1 байт | uint8 | В байтах.
- Серийный номер | ... | utf8 | Пример: ABC-012345678
- Номер команды | 1 байт | uint8 | Циклически от 0 до 255. При ответе на запрос подставляется из запроса.
- Номер пакета | 1 байт | uint8 | Номер пакета команды 0-255 (для каждой команды от 0).
- Данные пакета | ... | ... |
- Контрольная сумма | 2 байта | crc16 | Все поля кроме контрольной суммы.
- 
-#### Структура команды от устройства
+The process authenticates against PostgreSQL at startup and re-authenticates every 24 hours (retrying after 5 seconds on error) using the OAuth2 `client_credentials` grant to maintain valid sessions for all database calls.
 
- Поле | Размер поля | Тип данных | Назначение, примечания 
------ | ----------- | ---------- | ----------------------
- Метка времени | 4 байта | time | Текущее время устройства: 0 – неопределенное время, 1 – ошибка времени.
- Тип команды | 1 байт | uint8 | 0x01 – Текущее состояние истройства и т.д. 
- Код ошибки | 1 байт | uint8 | См. ниже. Если есть ошибка, то поле "Данные команды" отсутствует.
- Данные команды | ... | ... | Формат и размер зависит от типа команды.
+Installation
+-
 
-Тип команды ответа на запрос равен типу команды запроса со сброшенным старшим битом.
-Например: запрос 0x81 – ответ 0x01, запрос 0x82 – ответ 0x02 и т.д.
+Follow the build and installation instructions for [Apostol](https://github.com/apostoldevel/apostol#build) and [db-platform](https://github.com/apostoldevel/db-platform#quick-start).
 
-Код ошибки:
- * 0 - Нет ошибки;
- * 1 - Неопределенная ошибка;
- * 2 - Неизвестная команда;
- * 3 - Некорректный формат команды;
- * 4 - Некорректные параметры команды.
+Protocol
+-
 
-#### Структура команды к устройству
+The protocol is designed without binding to a specific device type.
 
- Поле | Размер поля | Тип данных | Назначение, примечания 
------ | ----------- | ---------- | ----------------------
- Тип команды | 1 байт | uint8 | 0x82 – запрос прозрачных данных и т.д. 
- Данные команды | ... | ... | Формат и размер зависит от типа команды.
+### Terminology
 
-### Типы команд
+* **Packet** — the unit of data transfer at the data link layer.
 
-#### Текущее состояние устройства
+* **Command** — the unit of data transfer at the application layer. If a command is long, it is split into packets.
 
-**Команда**: `0x01`
+A command consists of data from combined packets. The combination is performed from the initial to the final packet in ascending packet number order.
 
-* Посылается, если нет обмена в течении периода, заданного в конфигурации и в ответ на запрос "Запрос текущего состояния".
+Packets of a command may arrive in arbitrary order. An incompletely assembled command is discarded after a timeout.
 
- Поле | Размер поля | Тип данных | Назначение, примечания 
------ | ----------- | ---------- | ----------------------
- Состояние | 2 байта | device_state | 
- Текущий тариф | 1 байт | uint8 | 1, 2 и т.д. 0 – текущий тариф не задан.
- Время последнего конфигурирования | 4 байта | time | 0 – конфигурирование не проводилось, 1 – ошибка времени при последнем конфигурировании.
- Тип последней синхронизации времени | 1 байт | time_sync |
- Время последней синхронизации времени | 4 байта | time | 0 – синхронизация не проводилась, 1 – ошибка времени при последней синхронизации времени.
- 
-#### Текущие значения устройства
+If the device type is undefined and the identifier is empty, this is a broadcast packet.
 
-**Команда**: `0x04`
+#### General packet structure
 
- Поле | Размер поля | Тип данных | Назначение, примечания 
------ | ----------- | ---------- | ----------------------
- Количество значений | 1 байт | uint8 | Количество текущих значений.
- Для каждого значения: | |
- Тип значения | 1 байт | value_type |
- Размер значения | 1 байт | uint8 | В байтах.
- Текущее значение | ... | ... | Формат зависит от типа значения.
+| Field | Field size | Data type | Description |
+|-------|-----------|-----------|-------------|
+| Packet length | 1 or 2 bytes | length | Length of the entire packet (all fields except the length field) in bytes. |
+| Protocol version | 1 byte | uint8 | Current version = 1. |
+| Parameters | 1 byte | bin | bit 0 — initial command packet; bit 1 — final command packet; bit 2 — packet to device; bit 3 — reply to request. |
+| Device type | 1 byte | device_type | 0xA0 - IoT, 0xA1, 0xA2 - Mobile devices. |
+| Serial number size | 1 byte | uint8 | In bytes. |
+| Serial number | ... | utf8 | Example: ABC-012345678 |
+| Command number | 1 byte | uint8 | Cyclic from 0 to 255. On reply to a request, copied from the request. |
+| Packet number | 1 byte | uint8 | Packet number within the command, 0–255 (starts at 0 for each command). |
+| Packet data | ... | ... | |
+| Checksum | 2 bytes | crc16 | All fields except the checksum. |
 
-#### Пример пакета
+#### Command structure (from device)
 
-Команда `0x01` [Текущее состояние устройства](#текущее-состояние-устройства). 
- - Номер команды: `0xF0` (int8); 
- - Серийный номер: `1234` (utf8);
- - Время: `2020-01-01 08:09:10` (time);
- - Нет ошибок: `0x00` (int8); 
- - Время последней синхронизации времени: `2020-01-01 08:09:00` (time).
+| Field | Field size | Data type | Description |
+|-------|-----------|-----------|-------------|
+| Timestamp | 4 bytes | time | Current device time: 0 — undefined time, 1 — time error. |
+| Command type | 1 byte | uint8 | 0x01 — Current device state, etc. |
+| Error code | 1 byte | uint8 | See below. If there is an error, the "Command data" field is absent. |
+| Command data | ... | ... | Format and size depend on the command type. |
 
-Команда в шестнадцатеричном виде:
+The reply command type equals the request command type with the high bit cleared.
+Example: request 0x81 — reply 0x01, request 0x82 — reply 0x02, etc.
+
+Error codes:
+* 0 — No error;
+* 1 — Undefined error;
+* 2 — Unknown command;
+* 3 — Invalid command format;
+* 4 — Invalid command parameters.
+
+#### Command structure (to device)
+
+| Field | Field size | Data type | Description |
+|-------|-----------|-----------|-------------|
+| Command type | 1 byte | uint8 | 0x82 — transparent data request, etc. |
+| Command data | ... | ... | Format and size depend on the command type. |
+
+### Command types
+
+#### Current device state
+
+**Command**: `0x01`
+
+* Sent when there has been no exchange during the period set in the configuration, and in response to a "Current state request".
+
+| Field | Field size | Data type | Description |
+|-------|-----------|-----------|-------------|
+| State | 2 bytes | device_state | |
+| Current tariff | 1 byte | uint8 | 1, 2, etc. 0 — current tariff not set. |
+| Time of last configuration | 4 bytes | time | 0 — no configuration performed, 1 — time error at last configuration. |
+| Type of last time sync | 1 byte | time_sync | |
+| Time of last time sync | 4 bytes | time | 0 — no synchronisation performed, 1 — time error at last sync. |
+
+#### Current device values
+
+**Command**: `0x04`
+
+| Field | Field size | Data type | Description |
+|-------|-----------|-----------|-------------|
+| Value count | 1 byte | uint8 | Number of current values. |
+| For each value: | | | |
+| Value type | 1 byte | value_type | |
+| Value size | 1 byte | uint8 | In bytes. |
+| Current value | ... | ... | Format depends on value type. |
+
+#### Packet example
+
+Command `0x01` [Current device state](#current-device-state).
+ - Command number: `0xF0` (int8);
+ - Serial number: `1234` (utf8);
+ - Time: `2020-01-01 08:09:10` (time);
+ - No errors: `0x00` (int8);
+ - Time of last time sync: `2020-01-01 08:09:00` (time).
+
+Command in hexadecimal:
 ````
  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31
 1E 01 03 06 04 31 32 33 34 F0 00 A6 53 0C 5E 01 00 00 00 04 00 00 00 00 02 9C 53 0C 5E 3E C7
 │  │  │  │  │  │           │  │  ├──┐        │  │  │     │  │           │  │           └─ CRC16
-│  │  │  │  │  │           │  │  │  │        │  │  │     │  │           │  └─ Время последней синхронизации времени: 5E0C539C₁₆ -> 1577866140₁₀ -> 2020-01-01T08:09:00+00:00
-│  │  │  │  │  │           │  │  │  │        │  │  │     │  │           └─ Тип последней синхронизации времени: 0x02 - NTP синхронизация
-│  │  │  │  │  │           │  │  │  │        │  │  │     │  └─ Время последнего конфигурирования: 0 – конфигурирование не проводилось
-│  │  │  │  │  │           │  │  │  │        │  │  │     └─ Текущий тариф: 4
-│  │  │  │  │  │           │  │  │  │        │  │  └─ Состояние: 0 (2 байта)
-│  │  │  │  │  │           │  │  │  │        │  └─ Код ошибки: 0 (Нет ошибки)
-│  │  │  │  │  │           │  │  │  │        └─ Тип команды: 0x01 (Текущее состояние)
-│  │  │  │  │  │           │  │  │  └─ Метка времени: 5E0C53A6₁₆ -> 1577866150₁₀ -> 2020-01-01T08:09:10+00:00
-│  │  │  │  │  │           │  │  └─ Данные пакета
-│  │  │  │  │  │           │  └─ Номер пакета
-│  │  │  │  │  │           └─ Номер команды
-│  │  │  │  │  └─ Серийный номер
-│  │  │  │  └─ Размер серийного номера
-│  │  │  └─ Тип устройства
-│  │  └─ Параметры: 03 -> 00000011 - начальный и конечный пакет команды
-│  └─ Версия протокола
-└─ Длина пакета: 1E - 30 байт (все поля кроме поля длины).
+│  │  │  │  │  │           │  │  │  │        │  │  │     │  │           │  └─ Time of last sync: 5E0C539C₁₆ -> 1577866140₁₀ -> 2020-01-01T08:09:00+00:00
+│  │  │  │  │  │           │  │  │  │        │  │  │     │  │           └─ Type of last time sync: 0x02 - NTP sync
+│  │  │  │  │  │           │  │  │  │        │  │  │     │  └─ Time of last configuration: 0 — no configuration performed
+│  │  │  │  │  │           │  │  │  │        │  │  │     └─ Current tariff: 4
+│  │  │  │  │  │           │  │  │  │        │  │  └─ State: 0 (2 bytes)
+│  │  │  │  │  │           │  │  │  │        │  └─ Error code: 0 (No error)
+│  │  │  │  │  │           │  │  │  │        └─ Command type: 0x01 (Current state)
+│  │  │  │  │  │           │  │  │  └─ Timestamp: 5E0C53A6₁₆ -> 1577866150₁₀ -> 2020-01-01T08:09:10+00:00
+│  │  │  │  │  │           │  │  └─ Packet data
+│  │  │  │  │  │           │  └─ Packet number
+│  │  │  │  │  │           └─ Command number
+│  │  │  │  │  └─ Serial number
+│  │  │  │  └─ Serial number size
+│  │  │  └─ Device type
+│  │  └─ Parameters: 03 -> 00000011 - initial and final command packet
+│  └─ Protocol version
+└─ Packet length: 1E - 30 bytes (all fields except the length field).
 ````
 
-Команда `0x04` [Текущие значения устройства](#текущие-значения-устройства). 
- - Номер команды: `0x01` (int8); 
- - Серийный номер: `ABCD1234` (utf8);
- - Время: `2020-11-01 02:03:04` (time);
- - Заряд батареи: `87%` (int16); 
- - Широта: `55.754157803652780` (decimal_degree);
- - Долгота: `37.620306072829976` (decimal_degree).
+Command `0x04` [Current device values](#current-device-values).
+ - Command number: `0x01` (int8);
+ - Serial number: `ABCD1234` (utf8);
+ - Time: `2020-11-01 02:03:04` (time);
+ - Battery charge: `87%` (int16);
+ - Latitude: `55.754157803652780` (decimal_degree);
+ - Longitude: `37.620306072829976` (decimal_degree).
 
-Команда в шестнадцатеричном виде:
+Command in hexadecimal:
 ````
  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47 48
 2F 01 03 A1 08 41 42 43 44 31 32 33 34 01 00 58 17 9E 5F 04 00 03 00 02 FC 21 01 08 1F 5B 2F 3E 88 E0 4B 40 02 08 50 28 7C 30 66 CF 42 40 14 49
 │  │  │  │  │  │                       │  │  ├──┐        │  │  │  │  │  │     │  │  │                       │  │  │                       └─ CRC16: 0x4914 -> 18708
-│  │  │  │  │  │                       │  │  │  │        │  │  │  │  │  │     │  │  │                       │  │  └─ 4042CF66307C2850₁₆ -> 37.620306072829976₁₀  
-│  │  │  │  │  │                       │  │  │  │        │  │  │  │  │  │     │  │  │                       │  └─ Размер значения: 8 байт
-│  │  │  │  │  │                       │  │  │  │        │  │  │  │  │  │     │  │  │                       └─ Тип значения: 2 - Долгота          
+│  │  │  │  │  │                       │  │  │  │        │  │  │  │  │  │     │  │  │                       │  │  └─ 4042CF66307C2850₁₆ -> 37.620306072829976₁₀
+│  │  │  │  │  │                       │  │  │  │        │  │  │  │  │  │     │  │  │                       │  └─ Value size: 8 bytes
+│  │  │  │  │  │                       │  │  │  │        │  │  │  │  │  │     │  │  │                       └─ Value type: 2 - Longitude
 │  │  │  │  │  │                       │  │  │  │        │  │  │  │  │  │     │  │  └─ 404BE0883E2F5B1F₁₆ -> 55.754157803652780₁₀
-│  │  │  │  │  │                       │  │  │  │        │  │  │  │  │  │     │  └─ Размер значения: 8 байт
-│  │  │  │  │  │                       │  │  │  │        │  │  │  │  │  │     └─ Тип значения: 1 - Широта 
-│  │  │  │  │  │                       │  │  │  │        │  │  │  │  │  └─ 21FC₁₆ -> 8700       
-│  │  │  │  │  │                       │  │  │  │        │  │  │  │  └─ Размер значения: 2 байта
-│  │  │  │  │  │                       │  │  │  │        │  │  │  └─ Тип значения: 0 - Заряд батареи
-│  │  │  │  │  │                       │  │  │  │        │  │  └─ Количество значений: 3
-│  │  │  │  │  │                       │  │  │  │        │  └─ Код ошибки: 0 (Нет ошибки)
-│  │  │  │  │  │                       │  │  │  │        └─ Тип команды: 0x04 (Текущие значения устройства)
-│  │  │  │  │  │                       │  │  │  └─ Метка времени: 5F9E1758₁₆ -> 1604196184₁₀ -> 2020-11-01T02:03:04+00:00
-│  │  │  │  │  │                       │  │  └─ Данные пакета
-│  │  │  │  │  │                       │  └─ Номер пакета
-│  │  │  │  │  │                       └─ Номер команды
-│  │  │  │  │  └─ Серийный номер: ABCD1234
-│  │  │  │  └─ Размер серийного номера: 8
-│  │  │  └─ Тип устройства: 0xA1 - Мобильное устройство на ОС Android
-│  │  └─ Параметры: 03 -> 00000011 - начальный и конечный пакет команды
-│  └─ Версия протокола: 1
-└─ Длина пакета: 2F - 47 байт (все поля кроме поля длины).
+│  │  │  │  │  │                       │  │  │  │        │  │  │  │  │  │     │  └─ Value size: 8 bytes
+│  │  │  │  │  │                       │  │  │  │        │  │  │  │  │  │     └─ Value type: 1 - Latitude
+│  │  │  │  │  │                       │  │  │  │        │  │  │  │  │  └─ 21FC₁₆ -> 8700
+│  │  │  │  │  │                       │  │  │  │        │  │  │  │  └─ Value size: 2 bytes
+│  │  │  │  │  │                       │  │  │  │        │  │  │  └─ Value type: 0 - Battery charge
+│  │  │  │  │  │                       │  │  │  │        │  │  └─ Value count: 3
+│  │  │  │  │  │                       │  │  │  │        │  └─ Error code: 0 (No error)
+│  │  │  │  │  │                       │  │  │  │        └─ Command type: 0x04 (Current device values)
+│  │  │  │  │  │                       │  │  │  └─ Timestamp: 5F9E1758₁₆ -> 1604196184₁₀ -> 2020-11-01T02:03:04+00:00
+│  │  │  │  │  │                       │  │  └─ Packet data
+│  │  │  │  │  │                       │  └─ Packet number
+│  │  │  │  │  │                       └─ Command number
+│  │  │  │  │  └─ Serial number: ABCD1234
+│  │  │  │  └─ Serial number size: 8
+│  │  │  └─ Device type: 0xA1 - Android mobile device
+│  │  └─ Parameters: 03 -> 00000011 - initial and final command packet
+│  └─ Protocol version: 1
+└─ Packet length: 2F - 47 bytes (all fields except the length field).
 ````
 
-### Типы данных
+### Data types
 
-* Все типы данных передаются младшим байтом вперед.
+* All data types are transmitted little-endian (least significant byte first).
 
-**uint8**, **uint16**, **uint32**, **uint64** – тип данных, целочисленный беззнаковый двоичный, длиной 1, 2, 4, 8 байт соответственно.
+**uint8**, **uint16**, **uint32**, **uint64** — unsigned integer, 1, 2, 4, or 8 bytes respectively.
 
-**uint48** – целочисленный беззнаковый двоичный, длиной 6 байт. Аналогичен типу uint64 без двух старших байтов.
+**uint48** — unsigned integer, 6 bytes. Equivalent to uint64 without the two most significant bytes.
 
-**uint24** – целочисленный беззнаковый двоичный, длиной 3 байта. Аналогичен типу uint32 без старшего байта.
+**uint24** — unsigned integer, 3 bytes. Equivalent to uint32 without the most significant byte.
 
-**int8**, **int16** – тип данных, целочисленный знаковый двоичный, длиной, 1 или 2, байта соответственно (дополнительный код)
+**int8**, **int16** — signed integer, 1 or 2 bytes respectively (two's complement).
 
-**bool** – логический тип, 1 байт, 0 - false, 1 - true
+**bool** — boolean, 1 byte; 0 = false, 1 = true.
 
-**time** - тип данных для отображения времени, принятый в UNIX-системах - time_t (uint32, количество секунд с 1970-01-01 00:00:00). Локальное время.
+**time** — UNIX timestamp (uint32, seconds since 1970-01-01 00:00:00). Local time.
 
-**utf8** – строка в кодировке UTF-8
+**utf8** — UTF-8 encoded string.
 
-**length** – длина данных (1 или 2 байта). 1 байт: 0-6 бит – младшие биты длины, 7 бит – длина данных 2 байта). 2 байт: присутствует если установлен 7 бит первого байта, 0-7 бит – старшие биты длины.
+**length** — data length (1 or 2 bytes). 1 byte: bits 0–6 are the low bits of the length; bit 7 set means a 2-byte length follows. 2nd byte: present if bit 7 of the first byte is set; bits 0–7 are the high bits of the length.
 
-**crc16** - полином x16 + x15 + x2 + 1 (CRC16, Modbus). Пример расчета [CRC16](#crc16)
+**crc16** — polynomial x16 + x15 + x2 + 1 (CRC16 Modbus). See [CRC16](#crc16) for a calculation example.
 
-**freq** – частота (uint16). Герц *100 (12345 -> 123.45 Герц)
+**freq** — frequency (uint16). Hz × 100 (12345 → 123.45 Hz).
 
-**temper** – температура (int8), градусы Цельсия
+**temper** — temperature (int8), degrees Celsius.
 
-**degree** – градусы (uint16)
+**degree** — degrees (uint16).
 
-**decimal_degree** – десятичные градусы (ieee754_64)
+**decimal_degree** — decimal degrees (ieee754_64).
 
-**percent** – проценты (uint16), проценты *100 (10000 -> 100.00%)
+**percent** — percentage (uint16), percent × 100 (10000 → 100.00%).
 
-**meter_second** - метры в секунду
+**meter_second** — metres per second.
 
-**ieee754_32** - [IEEE 754](https://www.softelectro.ru/ieee754.html) - стандарт двоичной арифметики с плавающей точкой (32 бита)
+**ieee754_32** — [IEEE 754](https://www.softelectro.ru/ieee754.html) 32-bit floating point.
 
-**ieee754_64** - [IEEE 754](https://www.softelectro.ru/ieee754.html) - стандарт двоичной арифметики с плавающей точкой (64 бита)
+**ieee754_64** — [IEEE 754](https://www.softelectro.ru/ieee754.html) 64-bit floating point.
 
-**time_sync** – тип синхронизации времени: 
-  * 0x00 - Не определенная; 
-  * 0x01 - Ручная синхронизация с помощью команд "Установка времени"; 
-  * 0x02 - NTP синхронизация.
+**time_sync** — time synchronisation type:
+* 0x00 — Undefined;
+* 0x01 — Manual synchronisation via "Set time" command;
+* 0x02 — NTP synchronisation.
 
-**device_type** - тип устройства:
-  * 0xA0 - IoT (Интернет вещь)
-  * 0xA1 - Мобильное устройство на ОС Android
-  * 0xA2 - Мобильное устройство на ОС iOS
+**device_type** — device type:
+* 0xA0 — IoT (Internet of Things)
+* 0xA1 — Android mobile device
+* 0xA2 — iOS mobile device
 
-**value_type** – тип значения (1 байт):
-  * 0 - Заряд батареи (percent)  
-  * 1 - Широта - latitude (decimal_degree)  
-  * 2 - Долгота - longitude (decimal_degree)  
-  * 3 - Высота над уровнем моря - altitude (meter)  
-  * 4 - Точность свойств latitude и longitude (meter)  
-  * 5 - Точность свойства altitude (meter)  
-  * 6 - В каком направлении движется устройство (degree)  
-  * 7 - Скорость движения устройства (meter_second)  
+**value_type** — value type (1 byte):
+* 0 — Battery charge (percent)
+* 1 — Latitude (decimal_degree)
+* 2 — Longitude (decimal_degree)
+* 3 — Altitude above sea level (meter)
+* 4 — Accuracy of latitude and longitude (meter)
+* 5 — Accuracy of altitude (meter)
+* 6 — Bearing — direction of movement (degree)
+* 7 — Speed of movement (meter_second)
 
 #### CRC16
 
-* Примеры вычисления контрольной суммы CRC16. 
+CRC16 calculation example.
 
-На языке C#:
+In C#:
 ````csharp
 /// CRC16 calculation
 public static ushort Crc16(byte[] buffer, long index, long count)
@@ -250,3 +277,5 @@ public static ushort Crc16(byte[] buffer, long index, long count)
     return (ushort)crc;
 }
 ````
+
+[^crm]: **Apostol CRM** is an abstract term, not a standalone product. It refers to any project that uses both the [Apostol](https://github.com/apostoldevel/apostol) C++ framework and [db-platform](https://github.com/apostoldevel/db-platform) together through purpose-built modules and processes. Each framework can be used independently; combined, they form a full-stack backend platform.
