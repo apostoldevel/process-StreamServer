@@ -1,108 +1,82 @@
-/*++
+#pragma once
 
-Program name:
+// ─── StreamServer ────────────────────────────────────────────────────────────
+//
+// Universal UDP module. Binds a non-blocking UDP socket in on_start() and
+// registers it with EventLoop. Each incoming datagram triggers the virtual
+// on_datagram() callback.
+//
+// PgStreamServer extends this with PG stream.parse() dispatch — mirrors v1
+// CStreamServer behavior (S228 protocol and similar).
+//
+// Unlike v1, HTTP and UDP work simultaneously: the module creates its own
+// UDP socket alongside the HTTP listener.
 
-  Apostol CRM
+#include "apostol/module.hpp"
+#include "apostol/event_loop.hpp"
+#include "apostol/logger.hpp"
+#include "apostol/udp.hpp"
 
-Module Name:
+#ifdef WITH_POSTGRESQL
+#include "apostol/pg.hpp"
+#endif
 
-  StreamServer.hpp
+#include <memory>
+#include <string>
+#include <string_view>
 
-Notices:
+namespace apostol
+{
 
-  Process: Stream Server
+class Application;
 
-Author:
+class StreamServer : public Module
+{
+public:
+    explicit StreamServer(Application& app);
 
-  Copyright (c) Prepodobny Alen
+    std::string_view name() const override { return "StreamServer"; }
+    bool enabled() const override { return enabled_; }
+    bool execute(const HttpRequest&, HttpResponse&) override { return false; }
 
-  mailto: alienufo@inbox.ru
-  mailto: ufocomp@gmail.com
+    void on_start() override;
+    void on_stop() override;
 
---*/
+    UdpSocket* udp_socket() { return udp_.get(); }
 
-#ifndef APOSTOL_STREAM_SERVER_HPP
-#define APOSTOL_STREAM_SERVER_HPP
-//----------------------------------------------------------------------------------------------------------------------
+protected:
+    /// Called for each incoming UDP datagram.
+    /// Override for custom processing. Default: debug log only.
+    virtual void on_datagram(const UdpDatagram& dgram);
 
-extern "C++" {
+    /// Debug hex dump (mirrors v1 CStreamServer::Debug).
+    void debug_log(const UdpDatagram& dgram);
 
-namespace Apostol {
+    EventLoop& loop_;
+    Logger&    logger_;
 
-    namespace Processes {
+private:
+    uint16_t port_;
+    bool     enabled_;
+    std::unique_ptr<UdpSocket> udp_;
+};
 
-        //--------------------------------------------------------------------------------------------------------------
+#ifdef WITH_POSTGRESQL
 
-        //-- CStreamServer ---------------------------------------------------------------------------------------------
+/// StreamServer + PG stream.parse() — mirrors v1 CStreamServer.
+class PgStreamServer : public StreamServer
+{
+public:
+    explicit PgStreamServer(Application& app);
 
-        //--------------------------------------------------------------------------------------------------------------
+protected:
+    void on_datagram(const UdpDatagram& dgram) override;
 
-        class CStreamServer: public CProcessCustom {
-            typedef CProcessCustom inherited;
+private:
+    PgPool&     pool_;
+    std::string protocol_;
+};
 
-        private:
+#endif // WITH_POSTGRESQL
 
-            CStringList m_Sessions;
-
-            CString m_Agent;
-            CString m_Host;
-
-            CDateTime m_AuthDate;
-
-            int m_HeartbeatInterval;
-
-            CUDPAsyncServer m_Server;
-
-            void BeforeRun() override;
-            void AfterRun() override;
-
-            static ushort GetCRC16(void *buffer, size_t size);
-
-            void Authentication();
-            void SignOut(const CString &Session);
-
-            void InitializeStreamServer(const CString &Title);
-
-            void Heartbeat(CDateTime Now);
-
-            void Parse(CUDPAsyncServer *Server, CSocketHandle *Socket, const CString &Protocol, const CString &Data);
-
-        protected:
-
-            void DoTimer(CPollEventHandler *AHandler) override;
-
-            void DoError(const Delphi::Exception::Exception &E);
-
-            void DoRead(CUDPAsyncServer *Server, CSocketHandle *Socket, CManagedBuffer &Buffer);
-            void DoWrite(CUDPAsyncServer *Server, CSocketHandle *Socket, CSimpleBuffer &Buffer);
-
-            void DoException(CTCPConnection *AConnection, const Delphi::Exception::Exception &E);
-            bool DoExecute(CTCPConnection *AConnection) override;
-
-            void DoPostgresQueryExecuted(CPQPollQuery *APollQuery);
-            void DoPostgresQueryException(CPQPollQuery *APollQuery, const Delphi::Exception::Exception &E);
-
-        public:
-
-            explicit CStreamServer(CCustomProcess* AParent, CApplication *AApplication);
-
-            ~CStreamServer() override = default;
-
-            static class CStreamServer *CreateProcess(CCustomProcess *AParent, CApplication *AApplication) {
-                return new CStreamServer(AParent, AApplication);
-            }
-
-            static void Debug(CSocketHandle *Socket, const CString &Stream);
-
-            void Run() override;
-            void Reload() override;
-
-        };
-        //--------------------------------------------------------------------------------------------------------------
-
-    }
-}
-
-using namespace Apostol::Processes;
-}
-#endif //APOSTOL_STREAM_SERVER_HPP
+} // namespace apostol
